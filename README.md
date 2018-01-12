@@ -1,4 +1,6 @@
 # Predicting-Retailer-Revenue
+[![license](https://img.shields.io/github/license/mashape/apistatus.svg)](https://github.com/johnnychiuchiu/Machine-Learning/blob/master/LICENSE)
+
 A Kaggle InClass Prediction Competition to predict the customer spending in response to an email offer from a German retailer
 
 ## Problem Description

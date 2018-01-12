@@ -18,7 +18,7 @@ project
 |
 |__ scr: Source code for use in this project
 |
-|__ submission: a folder contains the submission file generated from the jupyter notebook
+|__ submission: a folder contains the submission file generated from r script
 ```
 
 ## Documentation

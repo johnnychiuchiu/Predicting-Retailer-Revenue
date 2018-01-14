@@ -77,11 +77,16 @@ feature_engineer <- function(df, isTrain=TRUE){
                               mutate(days_recent_purchase = as.integer(offer_date-max_date),
                                      days_first_purchase = as.integer(offer_date-min_date)) %>% 
                               mutate(total_duration = days_first_purchase - days_recent_purchase) %>%
-                              select(id, days_recent_purchase, days_first_purchase, total_duration)
+                              dplyr::select(id, days_recent_purchase, days_first_purchase, total_duration)
   
   ### Frequency
   # number of orders
   df_order_count = df %>% group_by(id) %>% summarise(order_count = n_distinct(ordnum))
+  
+  # qty sum of each category for each id
+  df_temp = df %>% group_by(id, category) %>% summarise(qty=sum(qty))
+  df_category_qty_count = df_temp %>% spread(category, qty)
+  df_category_qty_count[is.na(df_category_qty_count)]=0
   
   ### Monetary
   # average order quantity | average order price
@@ -89,13 +94,37 @@ feature_engineer <- function(df, isTrain=TRUE){
                                 group_by(id) %>% summarise(avg_qty = mean(qty_sum), avg_ord_value= mean(ord_value))
   
   ### Others
+  # # build a linear regression and use the slope as the trend
+  # temp = df %>% group_by(id,orddate) %>% summarise(qty=sum(qty)) %>% arrange(id, orddate)
+  # df_slope = temp %>% group_by(id) %>% summarise(slope=n())
+  # for(i in 1:dim(df_slope)[1]){
+  #   if(df_slope$slope[i]!=1){
+  #     df_id_filter = df %>% filter(id==df_slope$id[i])
+  #     fit_id = lm(qty~orddate, data=df_id_filter)
+  #     df_slope$slope[i] = summary(fit_id)$coefficients[2]
+  #   }else{
+  #     df_slope$slope[i]=0
+  #   }
+  # }
+  
+  # calculate the Coefficient of variation using the qty over year 
+  # reference: https://en.wikipedia.org/wiki/Coefficient_of_variation
+  temp = df %>% group_by(id,orddate) %>% summarise(qty=sum(qty)) %>% arrange(id, orddate)
+  temp$year = format(temp$orddate,'%Y')
+  temp2 = temp %>% group_by(id, year) %>% summarise(qty=sum(qty))
+  df_coeva = temp %>% group_by(id) %>% summarise(qty_sd = sd(qty), qty_mean = mean(qty))
+  df_coeva[is.na(df_coeva)]=0
+  df_coeva$coe_va = df_coeva$qty_sd/df_coeva$qty_mean
+  df_coeva = df_coeva %>% dplyr::select(id, coe_va)
+  
   
   ### Merge all the dataframe together
-  df_list = list(df_last_purchase_time, df_order_count, df_average_monetary)
+  df_list = list(df_last_purchase_time, df_order_count, df_average_monetary, 
+                 df_category_qty_count, df_coeva)#df_slope
   result = Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
 
   ### Keep response variable when doing feature engineer for training data
-  df_response = df %>% select(id, logtarg)
+  df_response = df %>% dplyr::select(id, logtarg)
   df_response = df_response[!duplicated(df_response), ]
   if(isTrain==TRUE){
     result = merge(result, df_response, by='id',all.x= TRUE)
@@ -104,4 +133,21 @@ feature_engineer <- function(df, isTrain=TRUE){
   return(result)  
 }
 
+my_cv_glmnet <- function(y, x, alpha){
+  # set seed for cross validation
+  set.seed(1)
+  
+  # using cv.glmnet to build lasso. The following line calculate 3 fold cv for each lambda, so there will be 1000*3 model fitting.
+  fit.cv=cv.glmnet(x,y,alpha=alpha,nfold=3,lambda=seq(0,10,0.01))
+  
+  # get the lambda with the smallest Mean-Squared Error
+  fitted_min_lambda=fit.cv$lambda.min
+  
+  # get the index of the smallest lambda, and use it to find our ideal coefficient
+  small.lambda.index <- which(fit.cv$lambda == fit.cv$lambda.min)
+  small.lambda.betas <- coef(fit.cv$glmnet.fit)[,small.lambda.index]
+  
+  return(list(lambda=fitted_min_lambda,
+              small.lambda.betas=small.lambda.betas))
+}
 

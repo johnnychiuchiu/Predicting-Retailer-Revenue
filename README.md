@@ -13,6 +13,7 @@ project
 |   README.md
 |   LICENSE
 |   .gitignore
+|   Predicting-Retailer-Revenue.Rproj
 |
 |__ data: contains the data downloaded from kaggle
 |

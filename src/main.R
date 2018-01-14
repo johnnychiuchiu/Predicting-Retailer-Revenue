@@ -1,6 +1,8 @@
 library(dplyr)
 library(ggplot2)
 library(car)
+library(MASS)
+library(glmnet)
 options(scipen=999) # remove scientific notation in printing
 
 
@@ -10,10 +12,10 @@ source(paste(pwd,'/src/function.R',sep=''))
 
 
 ########## Read Data
-booktrain_file = paste(getwd(),'/data/booktrain.csv',sep='')
+booktrain_path = paste(getwd(),'/data/booktrain.csv',sep='')
 booktrain = read.csv(booktrain_file)
 
-orders_file = paste(getwd(),'/data/orders.csv',sep='')
+orders_path = paste(getwd(),'/data/orders.csv',sep='')
 orders = read.csv(orders_file)
 
 
@@ -57,12 +59,36 @@ fit_multiple = lm(logtarg~.-id-total_duration, data = train)
 summary(fit_multiple)
 vif(fit_multiple)
 
+##### > Stepwise Linear Regression
+# **Backward**
+fit_stepback <- stepAIC(fit_multiple,direction = c("backward"))
+summary(fit_stepback) # Adjusted R-squared:  0.01663
+
+# **Forward**
+fit_zero <- lm(y ~ 1, data = train)
+fit_stepforw <- stepAIC(fit_zero,direction = c("forward"), scope=list(upper=fit_multiple,lower=fit_zero))
+summary(fit_stepforw) # Adjusted R-squared:  0.007776
+
+##### > Lasso Linear Regression
+y=train$logtarg
+x=model.matrix(logtarg~.-id-total_duration,train)
+param_lasso = my_cv_glmnet(y,x,1)$small.lambda.betas
+param_lasso = param_lasso[param_lasso!=0]
+lasso_feature = c('logtarg','days_recent_purchase', 'days_first_purchase', 'order_count', 'avg_qty',
+                '6','8','12','20','30','38','50','coe_va')
+fit_lasso = lm(logtarg~., data = train[lasso_feature])
+summary(fit_lasso) #Adjusted R-squared:  0.01626
+
+##### Model selection
+# choose the model according to Adjusted R-squared. The highest is the model from Stepwise Backward
+
+
 ##### Make prediction
-predict_version1 = predict(fit_multiple, newdata=test)
+predict_version1 = predict(fit_stepback, newdata=test)
 
 ##### Generating submitting file
 test$logtarg = predict_version1
-file_version1 = test %>% select(id, logtarg)
+file_version1 = test %>% dplyr::select(id, logtarg)
 colnames(file_version1) = c('id','yhat')
 write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
 

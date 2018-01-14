@@ -151,3 +151,75 @@ my_cv_glmnet <- function(y, x, alpha){
               small.lambda.betas=small.lambda.betas))
 }
 
+get_optimal_p <- function(real_response, predict_fit, p_threshold_list){
+  # get the optimal probability threshold according to CCR / f1_score
+  #
+  # Parameters
+  # ----------
+  # @param real_response: actual response vector
+  # @param predict_fit: predicted probabilty from the model
+  # @param p_threshold_list: list of probability that we want to test on
+  # @return: optimal probability threshold according to CCR
+  
+  max_metric= 0
+  optimal_p = 0
+  
+  
+  for (p in p_threshold_list){
+    pred = rep(0, length(real_response))
+    pred[predict_fit > p]=1
+    pred= factor(pred, levels=c(0,1))
+    # ccr = sum(diag(table(real=real_response, pred)))/ length(real_response)
+    
+    confusion_table = table(real=real_response, pred)
+    
+    sensitivity=confusion_table[2,2]/(confusion_table[2,1]+confusion_table[2,2])
+    specificity=confusion_table[1,1]/(confusion_table[1,1]+confusion_table[1,2])
+    precision=confusion_table[2,2]/(confusion_table[1,2]+confusion_table[2,2])
+    f1_score=2*precision*sensitivity/(precision+sensitivity)
+    # print(paste("f1_score:",f1_score," when p=",p))
+    
+    if (f1_score >= max_metric){
+      max_metric= f1_score
+      optimal_p = p
+    }
+  }
+  
+  return(optimal_p)
+}
+
+calculate_metrics <- function(df,real_response, predict_fit, optimal_p){
+  # a function that calculate all the classification related metrics, including confusion table, auc, ccr, ...etc.
+  #
+  # Parameters
+  # ----------  
+  # @param real_response: actual response vector
+  # @param predict_fit: predicted probabilty from the model
+  # @param optimal_p: optimal probability threshold according to CCR
+  # @return: a list of auc, ccr, sensitivity, precision, f1_score 
+  
+  # generate the vecotr that transform the fitted result into a vector of classified numbers
+  predict_response = rep(0,dim(df)[1])
+  predict_response[predict_fit>optimal_p[1]]=1
+  
+  
+  confusion_table = table(actual = real_response, prediction = predict_response)
+  print(confusion_table)
+  
+  ccr = sum(diag(confusion_table))/ sum(confusion_table)
+  sensitivity=confusion_table[2,2]/(confusion_table[2,1]+confusion_table[2,2])
+  specificity=confusion_table[1,1]/(confusion_table[1,1]+confusion_table[1,2])
+  precision=confusion_table[2,2]/(confusion_table[1,2]+confusion_table[2,2]) 
+  f1_score=2*precision*sensitivity/(precision+sensitivity)
+  
+  plot.roc(real_response, predict_fit, xlab="1-Specificity")
+  
+  my_auc = auc(real_response, predict_fit)
+  
+  return(list(auc=my_auc,
+              ccr=ccr,
+              sensitivity=sensitivity, 
+              specificity=specificity,
+              f1_score=f1_score))
+}
+

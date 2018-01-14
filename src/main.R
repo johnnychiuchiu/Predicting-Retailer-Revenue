@@ -3,6 +3,7 @@ library(ggplot2)
 library(car)
 library(MASS)
 library(glmnet)
+library(pROC)
 options(scipen=999) # remove scientific notation in printing
 
 
@@ -84,13 +85,13 @@ summary(fit_lasso) #Adjusted R-squared:  0.01626
 
 
 ##### Make prediction
-predict_version1 = predict(fit_stepback, newdata=test)
+predict_reg = predict(fit_stepback, newdata=test)
 
 ##### Generating submitting file
-test$logtarg = predict_version1
+test$logtarg = predict_reg
 file_version1 = test %>% dplyr::select(id, logtarg)
 colnames(file_version1) = c('id','yhat')
-write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
+# write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
 
 
 
@@ -98,18 +99,34 @@ write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b
 ##### Description: Fit a classication first and then a regression model. Predict final result combing both model. 
 
 ##### Classification
+train$logtarg_bol = ifelse(train$logtarg!=0, 1, 0)
+
+cla_feature = c('logtarg_bol',
+                'days_recent_purchase','days_first_purchase','order_count','coe_va',
+                '12','38')
+
+fit_classification = glm(logtarg_bol~., family=binomial, data=train[cla_feature])
+summary(fit_classification)
+
+predict_fit = predict(fit_classification, newdata=train[cla_feature], type="response")
+
+real_response = train$logtarg_bol
+optimal_p = get_optimal_p(real_response, predict_fit, seq(0.05,0.38,0.01))
+calculate_metrics(train,real_response, predict_fit, optimal_p)
+
 
 ##### Regression
+# use 'fit_stepback' in the previous version
 
-##### > Multiple Linear Regression
-##### > Stepwise Linear Regression
-##### > Lasso Linear Regression
-##### > Ridge Linear Regression
-
-##### Model Selection
+##### Make prediction
+predict_cla = predict(fit_classification, newdata=test, type="response")
 
 
 ##### Generating submitting file
+test$logtarg = predict_version1
+test$prob = predict_cla
+file_version2 = test %>% mutate(yhat = logtarg*prob) %>% dplyr::select(id, yhat)
+# write.csv(file_version2, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
 
 
 

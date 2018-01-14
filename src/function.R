@@ -1,4 +1,5 @@
 library(dplyr)
+library(zoo)
 
 check_outlier <- function(df, name, sd_cutoff){
   # Using standard deviation to check the outlier for numerical columns
@@ -83,10 +84,10 @@ feature_engineer <- function(df, isTrain=TRUE){
   # number of orders
   df_order_count = df %>% group_by(id) %>% summarise(order_count = n_distinct(ordnum))
   
-  # qty sum of each category for each id
-  df_temp = df %>% group_by(id, category) %>% summarise(qty=sum(qty))
-  df_category_qty_count = df_temp %>% spread(category, qty)
-  df_category_qty_count[is.na(df_category_qty_count)]=0
+  # # qty sum of each category for each id -> Using it generate worse result for testset on Kaggle, even though it increase the R^2 in train a lot. Can not verify it using cv.lm either. Just remove it for now.
+  # df_temp = df %>% group_by(id, category) %>% summarise(qty=sum(qty))
+  # df_category_qty_count = df_temp %>% spread(category, qty)
+  # df_category_qty_count[is.na(df_category_qty_count)]=0
   
   ### Monetary
   # average order quantity | average order price
@@ -94,18 +95,38 @@ feature_engineer <- function(df, isTrain=TRUE){
                                 group_by(id) %>% summarise(avg_qty = mean(qty_sum), avg_ord_value= mean(ord_value))
   
   ### Others
-  # # build a linear regression and use the slope as the trend
-  # temp = df %>% group_by(id,orddate) %>% summarise(qty=sum(qty)) %>% arrange(id, orddate)
-  # df_slope = temp %>% group_by(id) %>% summarise(slope=n())
+  # build a linear regression and use the slope as the trend
+  df_reg = df %>% group_by(id,orddate) %>% summarise(qty=sum(qty)) %>% arrange(id, orddate)
+  df_slope = df_reg %>% group_by(id) %>% summarise(slope=n())
+  for(i in 1:dim(df_slope)[1]){
+    if(df_slope$slope[i]!=1){
+      df_id_filter = df_reg[df_reg$id == df_slope$id[i],]
+      fit_id = lm(qty~orddate, data=df_id_filter)
+      df_slope$slope[i] = summary(fit_id)$coefficients[2]
+    }else{
+      df_slope$slope[i]=0
+    }
+  }
+  df_slope$slope = scale(df_slope$slope)
+  df_slope$slope = ifelse(df_slope$slope>=3, 3, df_slope$slope)
+  df_slope$slope = ifelse(df_slope$slope<=-3, -3, df_slope$slope)
+
+  # Using monthly unique ordnum count. It doesn't work, since the distribution is too skewed.
+  # temp = df %>% mutate(ym = as.yearmon(format(df$orddate,'%Y-%m')))
+  # df_reg = temp %>% group_by(id,ym) %>% summarise(ordnum=n_distinct(ordnum)) %>% arrange(id, ym)
+  # df_slope = df_reg %>% group_by(id) %>% summarise(slope=n())
   # for(i in 1:dim(df_slope)[1]){
   #   if(df_slope$slope[i]!=1){
-  #     df_id_filter = df %>% filter(id==df_slope$id[i])
-  #     fit_id = lm(qty~orddate, data=df_id_filter)
+  #     df_id_filter = df_reg[df_reg$id == df_slope$id[i],]
+  #     fit_id = lm(ordnum~ym, data=df_id_filter)
   #     df_slope$slope[i] = summary(fit_id)$coefficients[2]
   #   }else{
   #     df_slope$slope[i]=0
   #   }
   # }
+  # df_slope$slope = scale(df_slope$slope)
+  # df_slope$slope = ifelse(df_slope$slope>=3, 3, df_slope$slope)
+  # df_slope$slope = ifelse(df_slope$slope<=-3, -3, df_slope$slope)
   
   # calculate the Coefficient of variation using the qty over year 
   # reference: https://en.wikipedia.org/wiki/Coefficient_of_variation
@@ -120,7 +141,7 @@ feature_engineer <- function(df, isTrain=TRUE){
   
   ### Merge all the dataframe together
   df_list = list(df_last_purchase_time, df_order_count, df_average_monetary, 
-                 df_category_qty_count, df_coeva)#df_slope
+                 df_slope, df_coeva)#df_category_qty_count
   result = Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
 
   ### Keep response variable when doing feature engineer for training data

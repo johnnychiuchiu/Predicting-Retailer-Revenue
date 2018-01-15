@@ -22,6 +22,13 @@ check_outlier <- function(df, name, sd_cutoff){
   View(df %>% filter_(condition))
 }
 
+replace_outlier <- function(df, name, sd_cutoff){
+  df_filtered = rm_outlier(df, name, sd_cutoff)
+  
+  df[,name] = ifelse(df[,name]>sd_cutoff, max(df_filtered[,name]), df[,name])
+  return(df)
+}
+
 rm_outlier <- function(df, name, sd_cutoff){
   # Remove rows that is outlier defined by standard deviation away from the mean
   #
@@ -89,6 +96,7 @@ feature_engineer <- function(df, isTrain=TRUE){
   # df_category_qty_count = df_temp %>% spread(category, qty)
   # df_category_qty_count[is.na(df_category_qty_count)]=0
   
+  
   ### Monetary
   # average order quantity | average order price
   df_average_monetary = df %>% group_by(id, ordnum) %>% summarise(qty_sum=sum(qty), ord_value=sum(total_price)) %>% 
@@ -110,24 +118,8 @@ feature_engineer <- function(df, isTrain=TRUE){
   df_slope$slope = scale(df_slope$slope)
   df_slope$slope = ifelse(df_slope$slope>=3, 3, df_slope$slope)
   df_slope$slope = ifelse(df_slope$slope<=-3, -3, df_slope$slope)
+  df_slope$slope = as.numeric(df_slope$slope)
 
-  # Using monthly unique ordnum count. It doesn't work, since the distribution is too skewed.
-  # temp = df %>% mutate(ym = as.yearmon(format(df$orddate,'%Y-%m')))
-  # df_reg = temp %>% group_by(id,ym) %>% summarise(ordnum=n_distinct(ordnum)) %>% arrange(id, ym)
-  # df_slope = df_reg %>% group_by(id) %>% summarise(slope=n())
-  # for(i in 1:dim(df_slope)[1]){
-  #   if(df_slope$slope[i]!=1){
-  #     df_id_filter = df_reg[df_reg$id == df_slope$id[i],]
-  #     fit_id = lm(ordnum~ym, data=df_id_filter)
-  #     df_slope$slope[i] = summary(fit_id)$coefficients[2]
-  #   }else{
-  #     df_slope$slope[i]=0
-  #   }
-  # }
-  # df_slope$slope = scale(df_slope$slope)
-  # df_slope$slope = ifelse(df_slope$slope>=3, 3, df_slope$slope)
-  # df_slope$slope = ifelse(df_slope$slope<=-3, -3, df_slope$slope)
-  
   # calculate the Coefficient of variation using the qty over year 
   # reference: https://en.wikipedia.org/wiki/Coefficient_of_variation
   temp = df %>% group_by(id,orddate) %>% summarise(qty=sum(qty)) %>% arrange(id, orddate)
@@ -138,10 +130,13 @@ feature_engineer <- function(df, isTrain=TRUE){
   df_coeva$coe_va = df_coeva$qty_sd/df_coeva$qty_mean
   df_coeva = df_coeva %>% dplyr::select(id, coe_va)
   
-  
+  # # the top category of each user. Using it as a factor variable -> Not significant, and a id can have multiple top_n. Hard to defince
+  # temp = df %>% group_by(id, category) %>% summarise(qty=sum(qty))
+  # df_category = temp %>% group_by(id) %>% top_n(1, qty) %>%  mutate(category = as.factor(category))
+
   ### Merge all the dataframe together
   df_list = list(df_last_purchase_time, df_order_count, df_average_monetary, 
-                 df_slope, df_coeva)#df_category_qty_count
+                 df_slope, df_coeva)#df_category_qty_count, df_category
   result = Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
 
   ### Keep response variable when doing feature engineer for training data
@@ -197,8 +192,9 @@ get_optimal_p <- function(real_response, predict_fit, p_threshold_list){
     sensitivity=confusion_table[2,2]/(confusion_table[2,1]+confusion_table[2,2])
     specificity=confusion_table[1,1]/(confusion_table[1,1]+confusion_table[1,2])
     precision=confusion_table[2,2]/(confusion_table[1,2]+confusion_table[2,2])
-    f1_score=2*precision*sensitivity/(precision+sensitivity)
-    # print(paste("f1_score:",f1_score," when p=",p))
+    f1_score = 2*precision*sensitivity/(precision+sensitivity)
+    f1_score = ifelse(is.na(f1_score),0,f1_score)
+    print(paste("f1_score:",f1_score," when p=",p))
     
     if (f1_score >= max_metric){
       max_metric= f1_score
@@ -244,3 +240,26 @@ calculate_metrics <- function(df,real_response, predict_fit, optimal_p){
               f1_score=f1_score))
 }
 
+combined_prediction <- function(fit_classification, fit_regression, test, optimal_p){
+  
+  # get the predicted probability of whether a user will purchase or not
+  cla_predict = predict(fit_classification, newdata=test, type="response")
+  test$predict_prob = cla_predict
+  
+  # predict the purchase amount of the ids that are predicted as someone who will purchase.
+  test_reg = test %>% filter(predict_prob>optimal_p)
+  reg_predict = predict(fit_regression, newdata=test_reg)
+  test_reg$reg_predict= reg_predict
+  
+  # get the final predicted amount by multiplying the predicted amount and the predicted probability
+  test_final = merge(test %>% dplyr::select(id), test_reg %>% dplyr::select(id, reg_predict),by='id',all.x= TRUE)
+  test_final[is.na(test_final)]=0
+  test_final$prob = cla_predict
+  test_final = test_final %>% mutate(yhat= prob*reg_predict) %>% dplyr::select(id, yhat)
+  
+  return(test_final)
+}
+
+get_mse <- function(predict, actual){
+  return(sum((actual-predict) ^ 2))
+}

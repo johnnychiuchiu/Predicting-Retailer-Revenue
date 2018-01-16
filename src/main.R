@@ -14,10 +14,10 @@ source(paste(pwd,'/src/function.R',sep=''))
 
 ########## Read Data
 booktrain_path = paste(getwd(),'/data/booktrain.csv',sep='')
-booktrain = read.csv(booktrain_file)
+booktrain = read.csv(booktrain_path)
 
 orders_path = paste(getwd(),'/data/orders.csv',sep='')
-orders = read.csv(orders_file)
+orders = read.csv(orders_path)
 
 
 ##### Only keep the rows from orders that can be matched to booktrain, i.e., the rows with logtarg.

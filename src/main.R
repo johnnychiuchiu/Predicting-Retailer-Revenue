@@ -4,8 +4,17 @@ library(car)
 library(MASS)
 library(glmnet)
 library(pROC)
+if (!require(DAAG)) {
+  install.packages('DAAG')
+  library(DAAG)} else {
+  library(DAAG)
+  }
+if (!require(boot)) {
+  install.packages('boot')
+  library(boot)} else {
+    library(boot)
+  }
 options(scipen=999) # remove scientific notation in printing
-
 
 ########## Working directory and source function
 pwd = getwd()
@@ -60,15 +69,34 @@ fit_multiple = lm(logtarg~.-id-total_duration, data = train)
 summary(fit_multiple)
 vif(fit_multiple)
 
-cv.lm(data=train, m=10, form.lm=fit_multiple) # ms 0.375 
+cv.lm(data=train, m=10, form.lm=fit_multiple, printit = F) # ms 0.375 
 
 ##### > Linear Regression with custom chosen variables
-chosen_feature = c('days_first_purchase', 'order_count', 'avg_qty',
-                    'slope' ,'coe_va', 'logtarg')#'avg_qty', 'days_recent_purchase', 
+#chosen_feature = c('days_first_purchase', 'order_count', 'avg_qty',
+#                    'slope' ,'coe_va', 'logtarg')#'avg_qty', 'days_recent_purchase', 
+chosen_feature = c('days_first_purchase', 'order_count', 
+                   'slope' ,'coe_va', 'logtarg') #,'cat_count','total_money','avg_qty'
 fit_custom = lm(logtarg~., data = train[chosen_feature]) 
 summary(fit_custom)
 
 cv.lm(data=train[chosen_feature], m=10, form.lm=fit_custom) # ms 0.375
+
+#### Linear regression with interactions
+fit_interation = lm(logtarg~.*., data = train[,!(colnames(train) == "id")])  #adj-R^2 0.0327
+summary(fit_interation)
+vif(fit_int_stepback)
+
+cv.lm(data=train, m=10, form.lm=fit_interation) # ms 0.375
+#### Linear regression with interactions and stepback
+fit_int_stepback <- stepAIC(fit_interation,direction = c("backward"),trace=0)
+summary(fit_int_stepback) # Adjusted R-squared:  0.0311 #MSE = 0.606
+cv.lm(data=train[chosen_feature], m=10, form.lm=fit_custom) # ms 0.375
+#### Improved linear with interactions and stepback
+fit_chosen = lm(logtarg~days_recent_purchase+days_first_purchase+avg_qty+avg_ord_value+slope+days_recent_purchase:days_first_purchase+days_recent_purchase:order_count++days_first_purchase:avg_qty+days_first_purchase:coe_va+order_count:avg_ord_value+order_count:coe_va+slope:coe_va+cat_count:total_money
+, data = train) 
+summary(fit_chosen) #adj-R2 = 0.017 #MSE = 0.61 #actual = 0.61925
+
+cv.lm(data=train, m=10, form.lm=fit_chosen) # ms 0.374
 
 ##### > Stepwise Linear Regression
 # **Backward**
@@ -87,9 +115,10 @@ y=train$logtarg
 x=model.matrix(logtarg~.-id-total_duration,train)
 param_lasso = my_cv_glmnet(y,x,1)$small.lambda.betas
 param_lasso = param_lasso[param_lasso!=0]
-lasso_feature = c('logtarg','days_recent_purchase', 'days_first_purchase', 'order_count', 'avg_qty',
-                '6','8','12','20','30','38','50','coe_va')
-fit_lasso = lm(logtarg~., data = train[lasso_feature])
+#lasso_feature = c('logtarg','days_recent_purchase', 'days_first_purchase', 'order_count', 'avg_qty',
+#                '6','8','12','20','30','38','50','coe_va')
+#fit_lasso = lm(logtarg~., data = train[lasso_feature])
+fit_lasso = lm(logtarg~., data = train)
 summary(fit_lasso) #Adjusted R-squared:  0.01626
 
 cv.lm(data=train[lasso_feature], m=10, form.lm=fit_lasso) 
@@ -101,7 +130,7 @@ cv.lm(data=train[lasso_feature], m=10, form.lm=fit_lasso)
 
 
 ##### Make prediction
-predict_reg = predict(fit_multiple, newdata=test)
+predict_reg = predict(fit_chosen, newdata=test)
 
 ##### Generating submitting file
 test$logtarg = predict_reg
@@ -109,7 +138,6 @@ file_version1 = test %>% dplyr::select(id, logtarg)
 file_version1$logtarg = ifelse(file_version1$logtarg<0, 0, file_version1$logtarg)
 colnames(file_version1) = c('id','yhat')
 write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
-
 
 
 # ########## Model Building Version 2
@@ -146,5 +174,13 @@ write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b
 # # write.csv(file_version2, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
 # 
 
-
+###cross-validations
+# not working
+set.seed(17)
+cv.error.10= rep(0, 10)
+for (i in 1:10) {
+  fit_multiple = lm(logtarg~.-id-total_duration, data = train)
+  cv.error.10[i]=cv.lm(train,m=10,form.lm=fit_multiple)$delta[1]
+}
+cv.error.10
 

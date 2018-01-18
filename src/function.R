@@ -93,6 +93,19 @@ feature_engineer <- function(df, isTrain=TRUE){
   # average order quantity | average order price
   df_average_monetary = df %>% group_by(id, ordnum) %>% summarise(qty_sum=sum(qty), ord_value=sum(total_price)) %>% 
                                 group_by(id) %>% summarise(avg_qty = mean(qty_sum), avg_ord_value= mean(ord_value))
+  # total money spent
+  df_total_money = df %>% group_by(id, ordnum) %>% mutate(ord_value=total_price*qty) %>% 
+    group_by(id) %>% summarise(total_money = sum(ord_value))
+  
+  ### Diversity
+  # number of categories purcahsed
+  df_cat_count = df %>% group_by(id) %>% summarise(cat_count = n_distinct(category))
+  
+  ### Enthrophy
+  # how diverse the amount of purchase are from all categories (~0.5 means diverse)
+  df_entrophy = df %>% group_by(id,category) %>% summarise(t_qty = sum(qty)) %>% 
+    mutate(freq = t_qty / sum(t_qty)) %>% group_by(id) %>% 
+    summarise(entrophy = -sum(freq*log(freq)))
   
   ### Others
   # build a linear regression and use the slope as the trend
@@ -141,7 +154,7 @@ feature_engineer <- function(df, isTrain=TRUE){
   
   ### Merge all the dataframe together
   df_list = list(df_last_purchase_time, df_order_count, df_average_monetary, 
-                 df_slope, df_coeva)#df_category_qty_count
+                 df_slope, df_coeva, df_cat_count, df_entrophy, df_total_money)#df_category_qty_count
   result = Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
 
   ### Keep response variable when doing feature engineer for training data
@@ -243,4 +256,3 @@ calculate_metrics <- function(df,real_response, predict_fit, optimal_p){
               specificity=specificity,
               f1_score=f1_score))
 }
-

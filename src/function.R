@@ -106,9 +106,12 @@ feature_engineer <- function(df, isTrain=TRUE){
   df_entrophy = df %>% group_by(id,category) %>% summarise(t_qty = sum(qty)) %>% 
     mutate(freq = t_qty / sum(t_qty)) %>% group_by(id) %>% 
     summarise(entrophy = -sum(freq*log(freq)))
+  ### after aug
+  df_after_aug = df %>% group_by(id) %>% mutate(month = substr(orddate, 6, 7)) %>% summarise(aug_after_orders = sum(as.numeric(month)>7))
+  df_aug = df %>% group_by(id) %>% mutate(month = substr(orddate, 6, 7)) %>% summarise(aug_orders = sum(as.numeric(month)==8))
   
   ### Others
-  # build a linear regression and use the slope as the trend
+  # build a linear regression and use the slope as the tren)
   df_reg = df %>% group_by(id,orddate) %>% summarise(qty=sum(qty)) %>% arrange(id, orddate)
   df_slope = df_reg %>% group_by(id) %>% summarise(slope=n())
   for(i in 1:dim(df_slope)[1]){
@@ -153,7 +156,7 @@ feature_engineer <- function(df, isTrain=TRUE){
   
   
   ### Merge all the dataframe together
-  df_list = list(df_last_purchase_time, df_order_count, df_average_monetary, 
+  df_list = list(df_after_aug, df_last_purchase_time, df_order_count, df_average_monetary, 
                  df_slope, df_coeva, df_cat_count, df_entrophy, df_total_money)#df_category_qty_count
   result = Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
 

@@ -69,12 +69,12 @@ fit_multiple = lm(logtarg~.-id-total_duration, data = train)
 summary(fit_multiple)
 vif(fit_multiple)
 
-cv.lm(data=train, m=10, form.lm=fit_multiple, printit = F) # ms 0.375 
+cv.lm(data=train, m=10, form.lm=fit_multiple)#, printit = F) # ms 0.375 
 
 ##### > Linear Regression with custom chosen variables
 #chosen_feature = c('days_first_purchase', 'order_count', 'avg_qty',
 #                    'slope' ,'coe_va', 'logtarg')#'avg_qty', 'days_recent_purchase', 
-chosen_feature = c('days_first_purchase', 'order_count', 
+chosen_feature = c('days_first_purchase', 'order_count', 'aug_orders',
                    'slope' ,'coe_va', 'logtarg') #,'cat_count','total_money','avg_qty'
 fit_custom = lm(logtarg~., data = train[chosen_feature]) 
 summary(fit_custom)

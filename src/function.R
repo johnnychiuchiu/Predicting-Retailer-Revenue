@@ -155,10 +155,12 @@ feature_engineer <- function(df, isTrain=TRUE){
   df_coeva$coe_va = df_coeva$qty_sd/df_coeva$qty_mean
   df_coeva = df_coeva %>% dplyr::select(id, coe_va)
   
-  
+  # count distinct order date per id
+  df_distinct_orddate = df %>% group_by(id) %>% summarise(distinct_orddate = length(unique(orddate)))
+
   ### Merge all the dataframe together
   df_list = list(df_last_purchase_time, df_order_count, df_average_monetary, 
-                 df_slope, df_coeva, df_cat_count, df_entrophy, df_total_money, df_average_catcount)#df_category_qty_count
+                 df_slope, df_coeva, df_cat_count, df_entrophy, df_total_money, df_average_catcount, df_distinct_orddate)
   result = Reduce(function(x, y) merge(x, y, all=TRUE), df_list)
 
   ### Keep response variable when doing feature engineer for training data

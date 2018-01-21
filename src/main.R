@@ -70,7 +70,7 @@ system("say Just finished!")
 ##### Description: Fit a simple regression model for benchmark
 train_mult <- train[train$logtarg != 0,]
 
-fit_multiple <- lm(logtarg~.-id + avg_qty:ordperyr:avg_ord_value + avg_qty:coe_va + total_duration:total_money, data = train_mult)
+fit_multiple <- lm(logtarg~.-id - total_duration+ avg_qty:ordperyr:avg_ord_value + avg_qty:coe_va + total_duration:total_money, data = train_mult)
 summary(fit_multiple)
 vif(fit_multiple)
 
@@ -91,10 +91,10 @@ summary(fit_stepback) # Adjusted R-squared:  0.01663
 
 cv.lm(data=train_mult, m=10, form.lm=fit_stepback) # ms ms 0.374
 
-# # **Forward**
-# fit_zero <- lm(y ~ 1, data = train)
-# fit_stepforw <- stepAIC(fit_zero,direction = c("forward"), scope=list(upper=fit_multiple,lower=fit_zero))
-# summary(fit_stepforw) # Adjusted R-squared:  0.007776
+# **Forward**
+fit_zero <- lm(logtarg ~ 1, data = train_mult)
+fit_stepforw <- stepAIC(fit_zero,direction = c("forward"), scope=list(upper=fit_multiple,lower=fit_zero))
+summary(fit_stepforw) # Adjusted R-squared:  0.007776
 
 ##### > Lasso Linear Regression
 # y=train$logtarg

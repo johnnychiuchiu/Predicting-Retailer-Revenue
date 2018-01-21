@@ -1,5 +1,11 @@
 library(dplyr)
 library(zoo)
+library(ggplot2)
+library(car)
+library(MASS)
+library(glmnet)
+library(pROC)
+library(DAAG)
 
 check_outlier <- function(df, name, sd_cutoff){
   # Using standard deviation to check the outlier for numerical columns
@@ -76,9 +82,8 @@ feature_engineer <- function(df, isTrain=TRUE){
   offer_date = as.Date('01AUG2014',"%d%b%Y")
   df_last_purchase_time = df %>% group_by(id) %>% summarise(max_date = max(orddate), min_date = min(orddate)) %>% 
                               mutate(days_recent_purchase = as.integer(offer_date-max_date),
-                                     days_first_purchase = as.integer(offer_date-min_date)) %>% 
-                              mutate(total_duration = days_first_purchase - days_recent_purchase) %>%
-                              dplyr::select(id, days_recent_purchase, days_first_purchase, total_duration)
+                                     days_first_purchase = as.integer(offer_date-min_date)) %>%
+                              dplyr::select(id, days_recent_purchase, days_first_purchase)
   
   ### Frequency
   # number of orders

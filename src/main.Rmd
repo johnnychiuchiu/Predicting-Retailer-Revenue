@@ -1,0 +1,159 @@
+---
+title: "Predicting Retailer Revenue"
+author: "Arvind Koul, Ethel Zhang, Johnny Chiu, Saurabh Tripathi, Varun Gupta, Yuqing Liu"
+date: "1/21/2018"
+output: html_document
+---
+
+
+
+# Outline
+
+* Set up
+* Exploratory Data Analysis
+* Feature Engineer
+* Model Building
+* Model selection
+
+---
+### Set up
+```{r, warning=FALSE, message=FALSE}
+# Set working directory and source function
+pwd = getwd()
+source(paste(pwd,'/function.R',sep=''))
+
+# Read Data
+booktrain_path = paste(getwd(),'/../data/booktrain.csv',sep='')
+booktrain = read.csv(booktrain_path)
+orders_path = paste(getwd(),'/../data/orders.csv',sep='')
+orders = read.csv(orders_path)
+
+# Only keep the rows from orders that can be matched to booktrain, i.e., the rows with logtarg.
+all= merge(orders, booktrain, by='id',all.x= TRUE)
+
+# Create Train and Test Dataset
+train_original = all %>% filter(!is.na(logtarg)) # note that train data contains only 8224 customer id instead of 8311, since there are 87 ids in booktrain that can not be matched to the records in orders.
+train_original = data_manipulate(train_original)
+
+test_original = all %>% filter(is.na(logtarg))
+test_original = data_manipulate(test_original)
+
+```
+
+
+### Exploratory Data Analysis
+```{r}
+### check NA
+colSums(is.na(train_original)) # do not have any NA
+
+### check the distribution for categorical columns
+ggplot(data=train_original, aes(x=category)) + geom_histogram(binwidth=1)
+
+### check outlier for numerical columns
+# > qty
+#check_outlier(train_original, 'qty', 10) # I think all the outliers are correct but extreme value. Decide to keep it for now.
+#check_outlier(train_original, 'price', 10) # I think all the outliers are correct but extreme value. Decide to keep it for now.
+
+# > price
+# there are 3.25% of rows with the value 0 in column 'price', and most of them are from category 99 (61%).
+#View(train_original[train_original$price==0,]) 
+table(train_original[train_original$price==0,]$category)/dim(train_original[train_original$price==0,])[1]
+
+```
+
+
+
+### Feature Engineering
+```{r, warning=FALSE, message=FALSE}
+train = feature_engineer(train_original)
+test = feature_engineer(test_original, isTrain=FALSE)
+```
+
+Here are the list 
+
+| Feature | Description |
+|---------------------------------------------------- | ----------------------------------------------------|
+| days_recent_purchase | days since last purchase  |
+| days_first_purchase | days since first purchase |
+| order_count | total number of orders |
+| avg_qty | average quantity per order|
+| avg_ord_value | average order price |
+| slope | build a linear regression for each id using date as predictor and daily total quantity as response and use the slope as the trend |
+| coe_va | Coefficient of variation using the qty over year. The value is calculated using the variance divide by mean|
+
+### Model Building
+
+** Fit a simple regression model for benchmark**
+```{r}
+fit_multiple = lm(logtarg~.-id, data = train)
+summary(fit_multiple)
+vif(fit_multiple)
+```
+
+** Stepwise Linear Regression**
+```{r}
+# **Backward**
+fit_stepback <- stepAIC(fit_multiple,direction = c("backward"))
+summary(fit_stepback) # Adjusted R-squared:  0.01663
+
+# **Forward**
+fit_zero <- lm(logtarg ~ 1, data = train)
+fit_stepforw <- stepAIC(fit_zero,direction = c("forward"), scope=list(upper=fit_multiple,lower=fit_zero))
+summary(fit_stepforw) # Adjusted R-squared:  0.007776
+```
+
+** Lasso Linear Regression**
+```{r}
+y=train$logtarg
+x=model.matrix(logtarg~.-id,train)
+param_lasso = my_cv_glmnet(y,x,1)$small.lambda.betas
+param_lasso = param_lasso[param_lasso!=0]
+lasso_feature = c('logtarg','days_recent_purchase', 'days_first_purchase', 'order_count', 'avg_qty','coe_va')
+fit_lasso = lm(logtarg~., data = train[lasso_feature])
+summary(fit_lasso) #Adjusted R-squared:  0.01626
+```
+
+
+### Model selection
+Choose the model according to Root Mean Square Error(RMSE)
+
+In our final model, the significant features are 
+
+
+| Feature | Description |
+|---------------------------------------------------- | ----------------------------------------------------|
+| days_recent_purchase | days since last purchase  |
+| days_first_purchase | days since first purchase |
+| order_count | total number of orders |
+| avg_qty | average quantity per order|
+| avg_ord_value | average order price |
+| slope | build a linear regression for each id using date as predictor and daily total quantity as response and use the slope as the trend |
+| coe_va | Coefficient of variation using the qty over year. The value is calculated using the variance divide by mean|
+
+
+
+### Make prediction
+```{r}
+predict_reg = predict(fit_multiple, newdata=test)
+```
+
+### Generating submitting file
+```{r}
+test$logtarg = predict_reg
+file_version1 = test %>% dplyr::select(id, logtarg)
+file_version1$logtarg = ifelse(file_version1$logtarg<0, 0, file_version1$logtarg)
+colnames(file_version1) = c('id','yhat')
+# write.csv(file_version1, file=paste('./submission/model_',format(Sys.time(), "%b%d_%H%M%S"),'.csv',sep=''),row.names = FALSE)
+```
+
+
+
+
+
+##### > Linear Regression with custom chosen variables
+chosen_feature = c('days_first_purchase', 'order_count', 'avg_qty',
+                    'slope' ,'coe_va', 'logtarg')#'avg_qty', 'days_recent_purchase', 
+fit_custom = lm(logtarg~., data = train[chosen_feature]) 
+summary(fit_custom)
+
+cv.lm(data=train[chosen_feature], m=10, form.lm=fit_custom) # ms 0.375
